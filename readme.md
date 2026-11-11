@@ -94,6 +94,3 @@ Press **Esc** to exit. During consent or the survey, Esc exits with **no** parti
 - ID: log₂(A/W + 1)  
 - 10 trials × 32 targets  
 
-## License / course use
-
-Built for CIS 582 coursework. Adapt as needed for your study protocol.
