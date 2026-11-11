@@ -1,0 +1,35 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Experiment data (local participant/test results)
+data/
+plots/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local scratch / check scripts
+_check_*.py
+_inspect_*.py
+_verify_*.py
+
+# Environment
+.env
+.env.*
