@@ -21,5 +21,5 @@ pip install pygame==2.6.1 numpy==2.5.4 matplotlib==3.11.2 openpyxl==3.1.5
 
 ## System notes
 
-- A display large enough for the fixed target layout is required (largest distance 888 px, largest diameter 120 px).
+- The design layout fits a 1920 px wide display (largest distance 884 px, largest diameter 120 px). Smaller displays shrink the whole layout by one scale factor, so ID is unchanged.
 - On Windows, the app uses per-monitor DPI awareness so fullscreen matches the real pixel size of the monitor.

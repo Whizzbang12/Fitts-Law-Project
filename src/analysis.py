@@ -30,19 +30,34 @@ def _pairs():
 
 
 def _summarize(rows, direction):
-    """One row per distance-diameter pair. Mean MT uses hits only."""
+    """One row per A/W pair.
+
+    Mean MT gives each completed session equal weight: first average that
+    session's hits, then average those session means. Incomplete sessions
+    are already filtered out before this function runs.
+    """
     selected = rows if direction is None else [row for row in rows if row["direction"] == direction]
-    grouped = defaultdict(list)
+    grouped = defaultdict(lambda: defaultdict(list))
     for row in selected:
         key = (int(row["distance_px"]), int(row["diameter_px"]))
-        grouped[key].append(row)
+        grouped[key][row["participant"]].append(row)
 
     summary = []
     for distance, diameter in _pairs():
-        group = grouped.get((distance, diameter), [])
-        hits = [row for row in group if row["hit"]]
-        n_trials = len(group)
-        n_hits = len(hits)
+        by_session = grouped.get((distance, diameter), {})
+        session_means = []
+        n_trials = 0
+        n_hits = 0
+        error_values = []
+        path_means = []
+        for session_rows in by_session.values():
+            n_trials += len(session_rows)
+            hits = [row for row in session_rows if row["hit"]]
+            n_hits += len(hits)
+            error_values.extend(row["error_distance_px"] for row in session_rows)
+            if hits:
+                session_means.append(sum(row["mt_ms"] for row in hits) / len(hits))
+                path_means.append(sum(row["path_length_px"] for row in hits) / len(hits))
         summary.append(
             {
                 "distance_px": distance,
@@ -50,9 +65,9 @@ def _summarize(rows, direction):
                 "id_bits": config.index_of_difficulty(distance, diameter),
                 "n_trials": n_trials,
                 "n_hits": n_hits,
-                "mean_mt_ms": (sum(row["mt_ms"] for row in hits) / n_hits) if n_hits else None,
-                "mean_error_px": (sum(row["error_distance_px"] for row in group) / n_trials) if n_trials else None,
-                "mean_path_px": (sum(row["path_length_px"] for row in hits) / n_hits) if n_hits else None,
+                "mean_mt_ms": (sum(session_means) / len(session_means)) if session_means else None,
+                "mean_error_px": (sum(error_values) / len(error_values)) if error_values else None,
+                "mean_path_px": (sum(path_means) / len(path_means)) if path_means else None,
             }
         )
     return summary
@@ -78,25 +93,35 @@ def _avg_active_time_ms(session_totals):
     return sum(session_totals.values()) / len(session_totals)
 
 
-def _write_sheet(workbook, title, summary, fit, sessions, mode, avg_active_ms):
+def _write_sheet(workbook, title, summary, fit, sessions, excluded, mode, avg_active_ms):
     sheet = workbook.create_sheet(title)
     label = config.mode_label(mode)
-    sheet["A1"] = f"{label}s included"
-    sheet["B1"] = ", ".join(sessions) if sessions else "None yet"
-    sheet["A1"].font = LABEL_FONT
-    if fit is None:
-        sheet["A2"] = "Fit"
-        sheet["B2"] = "Not enough hit data to fit a line"
-    else:
-        sheet["A2"] = "Fit"
-        sheet["B2"] = f"MT = {fit['intercept']:.1f} + {fit['slope']:.1f} ID"
-        sheet["A3"] = "Correlation r"
-        sheet["B3"] = None if np.isnan(fit["r"]) else round(fit["r"], 4)
-    sheet["A4"] = f"Avg active time across {label.lower()}s (ms)"
-    sheet["B4"] = None if avg_active_ms is None else round(avg_active_ms, 1)
-    sheet["A2"].font = LABEL_FONT
-    sheet["A3"].font = LABEL_FONT
-    sheet["A4"].font = LABEL_FONT
+    has_r = fit is not None and not np.isnan(fit["r"])
+    labels_values = (
+        (
+            f"{label}s included (completed all {config.TRIAL_COUNT} trials)",
+            ", ".join(sessions) if sessions else "None yet",
+        ),
+        (
+            f"Incomplete {label.lower()}s excluded",
+            ", ".join(excluded) if excluded else "None",
+        ),
+        (
+            "Fit",
+            "Not enough hit data to fit a line"
+            if fit is None
+            else f"MT = {fit['intercept']:.1f} + {fit['slope']:.1f} ID",
+        ),
+        ("Correlation r", round(fit["r"], 4) if has_r else None),
+        ("R²", round(fit["r"] ** 2, 4) if has_r else None),
+        (
+            f"Avg active time across completed {label.lower()}s (ms)",
+            None if avg_active_ms is None else round(avg_active_ms, 1),
+        ),
+    )
+    for row_number, (text, value) in enumerate(labels_values, start=1):
+        sheet.cell(row_number, 1, text).font = LABEL_FONT
+        sheet.cell(row_number, 2, value)
 
     headers = [
         "Distance A (px)",
@@ -108,7 +133,7 @@ def _write_sheet(workbook, title, summary, fit, sessions, mode, avg_active_ms):
         "Mean error distance (px)",
         "Mean path of hits (px)",
     ]
-    header_row = 6
+    header_row = len(labels_values) + 2
     for column, header in enumerate(headers, start=1):
         cell = sheet.cell(header_row, column, header)
         cell.fill = HEADER_FILL
@@ -127,7 +152,7 @@ def _write_sheet(workbook, title, summary, fit, sessions, mode, avg_active_ms):
         ]
         for column, value in enumerate(values, start=1):
             sheet.cell(header_row + offset, column, value)
-    widths = [36, 18, 14, 12, 12, 18, 26, 24]
+    widths = [48, 18, 14, 12, 12, 18, 26, 24]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[chr(64 + index)].width = width
     return sheet
@@ -140,8 +165,11 @@ def _save_plot(fit, title, path):
     plt.scatter(fit["x"], fit["y"], color="#1F4E79", zorder=3)
     x_line = np.linspace(float(fit["x"].min()), float(fit["x"].max()), 50)
     plt.plot(x_line, fit["intercept"] + fit["slope"] * x_line, color="#B71C1C")
-    r_text = "n/a" if np.isnan(fit["r"]) else f"{fit['r']:.3f}"
-    plt.title(f"{title}\nMT = {fit['intercept']:.1f} + {fit['slope']:.1f} ID, r = {r_text}")
+    if np.isnan(fit["r"]):
+        stats = "r = n/a, R² = n/a"
+    else:
+        stats = f"r = {fit['r']:.3f}, R² = {fit['r'] ** 2:.3f}"
+    plt.title(f"{title}\nMT = {fit['intercept']:.1f} + {fit['slope']:.1f} ID, {stats}")
     plt.xlabel("Index of difficulty (bits)")
     plt.ylabel("Movement time (ms)")
     plt.grid(True, alpha=0.3)
@@ -156,14 +184,19 @@ def build_results(mode=config.MODE_PARTICIPANT):
     paths = config.paths_for(mode)
     database = Database(paths["db"], mode)
     try:
-        rows = database.fetch_trials()
-        session_totals = database.session_totals()
+        completed = database.completed_sessions()
+        incomplete = database.incomplete_sessions()
+        removed = database.excluded_session_numbers()
+        rows = database.fetch_trials(completed)
+        session_totals = database.session_totals(completed)
     finally:
         database.close()
 
-    sessions = sorted({row["participant"] for row in rows}, key=lambda value: int(value) if value.isdigit() else value)
-    # Only sessions that actually have pointing data contribute to avg active time.
-    avg_active_ms = _avg_active_time_ms(session_totals) if session_totals else None
+    sessions = [str(number) for number in completed]
+    removed_ids = set(removed)
+    excluded = [str(number) for number in incomplete if number not in removed_ids]
+    excluded += [f"{number} removed" for number in removed]
+    avg_active_ms = _avg_active_time_ms(session_totals)
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
@@ -172,7 +205,7 @@ def build_results(mode=config.MODE_PARTICIPANT):
         summary = _summarize(rows, direction)
         fit = _fit(summary)
         sheet = _write_sheet(
-            workbook, sheet_name, summary, fit, sessions, mode, avg_active_ms
+            workbook, sheet_name, summary, fit, sessions, excluded, mode, avg_active_ms
         )
         image_path = paths["plots"] / f"{sheet_name.lower()}.png"
         if fit is None:
@@ -184,7 +217,7 @@ def build_results(mode=config.MODE_PARTICIPANT):
                 chart = XLImage(str(image_path))
                 chart.width = 520
                 chart.height = 360
-                sheet.add_image(chart, "J5")
+                sheet.add_image(chart, "J8")
 
     paths["xlsx"].parent.mkdir(parents=True, exist_ok=True)
     try:

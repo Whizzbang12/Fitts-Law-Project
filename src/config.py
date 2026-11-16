@@ -8,8 +8,10 @@ DATA_DIR = ROOT / "data"
 PARTICIPANT_DIR = DATA_DIR / "participants"
 TEST_DIR = DATA_DIR / "test"
 
-# Fixed pixel sizes used on every screen. ID is based on these values.
-DISTANCES = (150, 380, 620, 888)
+# Design sizes in pixels at scale 1.0 (fits exactly 1920 px wide).
+# Smaller screens draw every A, W, and the center circle multiplied by one
+# scale factor, so A/W and therefore ID stay identical for every participant.
+DISTANCES = (150, 380, 620, 884)
 DIAMETERS = (24, 48, 84, 120)
 DIRECTIONS = ("left", "right")
 TRIAL_COUNT = 10
@@ -69,6 +71,21 @@ def required_half_height():
     return max(DIAMETERS) / 2 + EDGE_MARGIN
 
 
-def screen_can_show_targets(width, height):
-    """True when every fixed-size target fits on this screen."""
-    return width / 2 >= required_half_width() and height / 2 >= required_half_height()
+UI_DESIGN_SIZE = (1920, 1080)
+UI_SCALE_LIMITS = (0.5, 2.0)
+
+
+def ui_scale(width, height):
+    """Size factor for menu and survey text, buttons, and spacing (not the task)."""
+    factor = min(width / UI_DESIGN_SIZE[0], height / UI_DESIGN_SIZE[1])
+    low, high = UI_SCALE_LIMITS
+    return max(low, min(high, factor))
+
+
+def layout_scale(width, height):
+    """One factor applied to every distance and diameter; never above 1.0."""
+    return min(
+        1.0,
+        width / (2 * required_half_width()),
+        height / (2 * required_half_height()),
+    )

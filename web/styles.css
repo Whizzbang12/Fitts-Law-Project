@@ -1,0 +1,123 @@
+:root {
+    --ui: 1;
+    --bg: #121212;
+    --text: #ffffff;
+    --muted: #bebebe;
+    --button: #ffc107;
+    --button-text: #121212;
+    --field: #282828;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    min-height: 100%;
+}
+
+#screen {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: calc(48px * var(--ui)) calc(48px * var(--ui)) calc(140px * var(--ui));
+    text-align: center;
+}
+
+h1 {
+    font-size: calc(36px * var(--ui));
+    font-weight: 400;
+    margin: 0 0 calc(28px * var(--ui));
+}
+
+p, .prompt {
+    max-width: 68vw;
+    font-size: calc(24px * var(--ui));
+    line-height: 1.45;
+    margin: calc(8px * var(--ui)) 0;
+}
+
+.muted { color: var(--muted); }
+
+.choices {
+    display: flex;
+    flex-direction: column;
+    gap: calc(16px * var(--ui));
+    margin-top: calc(28px * var(--ui));
+}
+
+button, .choice {
+    border: 0;
+    border-radius: calc(10px * var(--ui));
+    background: var(--button);
+    color: var(--button-text);
+    font: inherit;
+    font-size: calc(32px * var(--ui));
+    min-width: calc(320px * var(--ui));
+    min-height: calc(64px * var(--ui));
+    padding: calc(12px * var(--ui)) calc(24px * var(--ui));
+    cursor: pointer;
+}
+
+.choice.selected {
+    outline: calc(3px * var(--ui)) solid #b4ffb4;
+    background: #467847;
+    color: #ffffff;
+}
+
+input[type="text"] {
+    width: min(520px, 80vw);
+    height: calc(64px * var(--ui));
+    border-radius: calc(8px * var(--ui));
+    border: calc(2px * var(--ui)) solid #ffffff;
+    background: var(--field);
+    color: var(--text);
+    font: inherit;
+    font-size: calc(24px * var(--ui));
+    padding: 0 calc(18px * var(--ui));
+    margin-top: calc(24px * var(--ui));
+}
+
+.dock {
+    position: fixed;
+    right: calc(48px * var(--ui));
+    bottom: calc(48px * var(--ui));
+    display: flex;
+    gap: calc(24px * var(--ui));
+}
+
+.dock button.secondary, #back {
+    background: transparent;
+    color: var(--text);
+    border: calc(2px * var(--ui)) solid #ffffff;
+    min-width: calc(180px * var(--ui));
+}
+
+#back {
+    position: fixed;
+    left: calc(48px * var(--ui));
+    bottom: calc(48px * var(--ui));
+}
+
+#task {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    background: var(--bg);
+}
+
+body.task #screen { display: none; }
+body.task #task { display: block; }
+
+#error {
+    color: #ffb4b4;
+    min-height: 1.2em;
+}

@@ -17,22 +17,52 @@ CREATE TABLE IF NOT EXISTS {table} (
     mt_ms REAL NOT NULL,
     path_length_px REAL NOT NULL,
     hit INTEGER NOT NULL,
-    error_distance_px REAL NOT NULL
+    error_distance_px REAL NOT NULL,
+    scale REAL NOT NULL DEFAULT 1.0,
+    path_length_raw_px REAL,
+    error_distance_raw_px REAL
 )
 """
 
 CREATE_DEMOGRAPHICS = """
 CREATE TABLE IF NOT EXISTS demographics (
     participant INTEGER PRIMARY KEY,
+    name TEXT,
     gender TEXT,
+    gender_other TEXT,
     age TEXT,
     handedness TEXT,
     computer_hours TEXT,
-    disabilities TEXT
+    input_device TEXT,
+    input_device_other TEXT,
+    mouse_model TEXT,
+    machine_company TEXT,
+    disabilities TEXT,
+    skipped_questions TEXT,
+    survey_back_count INTEGER
+)
+"""
+
+CREATE_SESSION_INFO = """
+CREATE TABLE IF NOT EXISTS session_info (
+    session INTEGER PRIMARY KEY,
+    os_name TEXT,
+    os_release TEXT,
+    os_version TEXT,
+    machine TEXT,
+    screen_width INTEGER,
+    screen_height INTEGER,
+    scale REAL
 )
 """
 
 TABLE_RE = re.compile(r"^(participant|test)_(\d+)$")
+
+
+def _text_or_null(value):
+    """Skipped or blank answers are stored as NULL."""
+    text = str(value).strip() if value is not None else ""
+    return text or None
 
 
 class Database:
@@ -43,17 +73,55 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute(CREATE_SESSION_INFO)
+        self._drop_session_timestamp()
         if mode == config.MODE_PARTICIPANT:
             self.conn.execute(CREATE_DEMOGRAPHICS)
             self._ensure_demographics_columns()
-            self.conn.commit()
+        for number in self._trial_table_numbers():
+            self._ensure_trial_columns(self.table_name(number))
+        self.conn.commit()
         self.purge_empty_sessions()
+
+    def _drop_session_timestamp(self):
+        cursor = self.conn.execute("PRAGMA table_info(session_info)")
+        if "recorded_at" in {row[1] for row in cursor}:
+            self.conn.execute("ALTER TABLE session_info DROP COLUMN recorded_at")
 
     def _ensure_demographics_columns(self):
         cursor = self.conn.execute("PRAGMA table_info(demographics)")
         existing = {row[1] for row in cursor}
-        if "computer_hours" not in existing:
-            self.conn.execute("ALTER TABLE demographics ADD COLUMN computer_hours TEXT")
+        for column in (
+            "name",
+            "gender_other",
+            "computer_hours",
+            "input_device",
+            "input_device_other",
+            "mouse_model",
+            "machine_company",
+            "skipped_questions",
+        ):
+            if column not in existing:
+                self.conn.execute(f"ALTER TABLE demographics ADD COLUMN {column} TEXT")
+        if "survey_back_count" not in existing:
+            self.conn.execute(
+                "ALTER TABLE demographics ADD COLUMN survey_back_count INTEGER"
+            )
+
+    def _ensure_trial_columns(self, table):
+        cursor = self.conn.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor}
+        if "scale" not in existing:
+            self.conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN scale REAL NOT NULL DEFAULT 1.0"
+            )
+        for column, normalized in (
+            ("path_length_raw_px", "path_length_px"),
+            ("error_distance_raw_px", "error_distance_px"),
+        ):
+            if column not in existing:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} REAL")
+                self.conn.execute(f"UPDATE {table} SET {column} = {normalized} * scale")
 
     def close(self):
         self.conn.close()
@@ -64,6 +132,7 @@ class Database:
     def ensure_session(self, session_number):
         table = self.table_name(session_number)
         self.conn.execute(CREATE_SESSION.format(table=table))
+        self._ensure_trial_columns(table)
         self.conn.commit()
         return table
 
@@ -71,6 +140,10 @@ class Database:
         """Remove a reserved session so its number can be reused."""
         table = self.table_name(session_number)
         self.conn.execute(f"DROP TABLE IF EXISTS {table}")
+        self.conn.execute(
+            "DELETE FROM session_info WHERE session = ?",
+            (int(session_number),),
+        )
         if self.mode == config.MODE_PARTICIPANT:
             self.conn.execute(
                 "DELETE FROM demographics WHERE participant = ?",
@@ -85,8 +158,9 @@ class Database:
             INSERT INTO {table} (
                 trial_number, target_number, direction,
                 distance_px, diameter_px, id_bits, mt_ms,
-                path_length_px, hit, error_distance_px
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                path_length_px, hit, error_distance_px, scale,
+                path_length_raw_px, error_distance_raw_px
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 row["trial_number"],
@@ -99,6 +173,30 @@ class Database:
                 row["path_length_px"],
                 row["hit"],
                 row["error_distance_px"],
+                row.get("scale", 1.0),
+                row.get("path_length_raw_px"),
+                row.get("error_distance_raw_px"),
+            ),
+        )
+        self.conn.commit()
+
+    def save_session_info(self, session_number, info):
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO session_info (
+                session, os_name, os_release, os_version, machine,
+                screen_width, screen_height, scale
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(session_number),
+                info.get("os_name"),
+                info.get("os_release"),
+                info.get("os_version"),
+                info.get("machine"),
+                info.get("screen_width"),
+                info.get("screen_height"),
+                info.get("scale"),
             ),
         )
         self.conn.commit()
@@ -107,16 +205,27 @@ class Database:
         self.conn.execute(
             """
             INSERT OR REPLACE INTO demographics (
-                participant, gender, age, handedness, computer_hours, disabilities
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                participant, name, gender, gender_other, age,
+                handedness, computer_hours, input_device,
+                input_device_other, mouse_model, machine_company,
+                disabilities, skipped_questions, survey_back_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(session_number),
-                answers.get("gender"),
-                str(answers.get("age") or "").strip(),
-                answers.get("handedness"),
-                str(answers.get("computer_hours") or "").strip(),
-                answers.get("disabilities"),
+                _text_or_null(answers.get("name")),
+                _text_or_null(answers.get("gender")),
+                _text_or_null(answers.get("gender_other")),
+                _text_or_null(answers.get("age")),
+                _text_or_null(answers.get("handedness")),
+                _text_or_null(answers.get("computer_hours")),
+                _text_or_null(answers.get("input_device")),
+                _text_or_null(answers.get("input_device_other")),
+                _text_or_null(answers.get("mouse_model")),
+                _text_or_null(answers.get("machine_company")),
+                _text_or_null(answers.get("disabilities")),
+                _text_or_null(answers.get("skipped_questions")),
+                int(answers.get("survey_back_count") or 0),
             ),
         )
         self.conn.commit()
@@ -223,9 +332,26 @@ class Database:
         cursor = self.conn.execute(f"SELECT COALESCE(SUM(mt_ms), 0) AS total FROM {table}")
         return float(cursor.fetchone()["total"])
 
-    def fetch_trials(self):
+    def is_complete(self, session_number):
+        return self.next_trial_number(session_number) is None
+
+    def excluded_session_numbers(self):
+        """Sessions left out of Excel. Empty unless a download marked some removed."""
+        if not self._table_exists("excluded_sessions"):
+            return []
+        cursor = self.conn.execute("SELECT session FROM excluded_sessions ORDER BY session")
+        return [int(row["session"]) for row in cursor]
+
+    def completed_sessions(self):
+        dropped = set(self.excluded_session_numbers())
+        return [n for n in self.session_numbers() if self.is_complete(n) and n not in dropped]
+
+    def incomplete_sessions(self):
+        return [n for n in self.session_numbers() if not self.is_complete(n)]
+
+    def fetch_trials(self, sessions=None):
         rows = []
-        for number in self.session_numbers():
+        for number in self.session_numbers() if sessions is None else sessions:
             table = self.table_name(number)
             if not self._table_exists(table):
                 continue
@@ -244,10 +370,10 @@ class Database:
                 rows.append(item)
         return rows
 
-    def session_totals(self):
+    def session_totals(self, sessions=None):
         """Active pointing time in ms for each session that has trial data."""
         totals = {}
-        for number in self.session_numbers():
+        for number in self.session_numbers() if sessions is None else sessions:
             total = self.session_active_time_ms(number)
             if total > 0 or self.target_count(number) > 0:
                 totals[number] = total
