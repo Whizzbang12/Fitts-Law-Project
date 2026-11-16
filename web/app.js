@@ -28,6 +28,7 @@ const state = {
     backCount: 0,
     demographicsSaved: false,
     infoSaved: false,
+    saving: false,
     error: "",
     buttons: [],
 };
@@ -46,7 +47,7 @@ function persist() {
         backCount: state.backCount,
         demographicsSaved: state.demographicsSaved,
         infoSaved: state.infoSaved,
-        screen: state.screen === "move" || state.screen === "center" ? "next" : state.screen,
+        screen: state.screen === "move" || state.screen === "center" || state.screen === "saving" ? "next" : state.screen,
     }));
 }
 
@@ -276,11 +277,12 @@ function drawTask() {
     ctx.fillStyle = "#ffffff";
     ctx.font = `${Math.max(16, Math.round(24 * study.uiScale(view.width, view.height)))}px Segoe UI`;
     ctx.textAlign = "center";
-    ctx.fillText(state.screen === "center" ? "Click the white circle" : "Click the yellow circle", view.center[0], 48);
+    const showingTarget = state.screen === "move" || state.screen === "saving";
+    ctx.fillText(showingTarget ? "Click the yellow circle" : "Click the white circle", view.center[0], 48);
     ctx.beginPath();
     ctx.arc(view.center[0], view.center[1], (study.CENTER_DIAMETER * view.scale) / 2, 0, Math.PI * 2);
     ctx.fill();
-    if (state.screen === "move" && state.current) {
+    if (showingTarget && state.current) {
         const [direction, distance, diameter] = state.current;
         const [x, y] = targetCenter(direction, distance, view);
         ctx.fillStyle = "#ffc107";
@@ -295,7 +297,7 @@ function drawTask() {
 }
 
 function show() {
-    if (state.screen === "center" || state.screen === "move") drawTask();
+    if (state.screen === "center" || state.screen === "move" || state.screen === "saving") drawTask();
     else drawMenus();
 }
 
@@ -401,6 +403,7 @@ async function saveTarget(click) {
     const radius = (diameter * view.scale) / 2;
     const hit = offset <= radius;
     const error = hit ? 0 : offset - radius;
+    if (state.doneKeys.length >= 32) return;
     const targetNumber = state.doneKeys.length + 1;
     await call("insert_trial", {
         p_mode: state.mode,
@@ -557,10 +560,12 @@ canvas.addEventListener("mousemove", (event) => {
 });
 
 canvas.addEventListener("click", async (event) => {
+    if (state.saving || state.doneKeys.length >= 32) return;
     const view = layout();
     const point = [event.offsetX, event.offsetY];
     const centerDistance = Math.hypot(point[0] - view.center[0], point[1] - view.center[1]);
     if (state.screen === "center" && centerDistance <= (study.CENTER_DIAMETER * view.scale) / 2) {
+        if (!state.queue.length) return;
         state.current = state.queue.shift();
         state.path = 0;
         state.lastPoint = point;
@@ -569,12 +574,18 @@ canvas.addEventListener("click", async (event) => {
         show();
         return;
     }
-    if (state.screen === "move") {
+    // One click per yellow circle. A click on the white circle is a miss.
+    if (state.screen === "move" && state.current) {
+        state.saving = true;
+        state.screen = "saving";
         state.error = "";
         try {
             await saveTarget(point);
         } catch (error) {
             state.error = error.message;
+            state.screen = "move";
+        } finally {
+            state.saving = false;
         }
         show();
     }

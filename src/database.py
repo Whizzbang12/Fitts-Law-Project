@@ -325,11 +325,21 @@ class Database:
         return max(unfinished) if unfinished else None
 
     def session_active_time_ms(self, session_number):
-        """Sum of movement times only. Menus and Next waits are not included."""
+        """Sum of the first 32 movement times in each trial."""
         table = self.table_name(session_number)
         if not self._table_exists(table):
             return 0.0
-        cursor = self.conn.execute(f"SELECT COALESCE(SUM(mt_ms), 0) AS total FROM {table}")
+        cursor = self.conn.execute(
+            f"""
+            SELECT COALESCE(SUM(mt_ms), 0) AS total FROM (
+                SELECT mt_ms,
+                       ROW_NUMBER() OVER (PARTITION BY trial_number ORDER BY id) AS n
+                FROM {table}
+            )
+            WHERE n <= ?
+            """,
+            (config.TARGETS_PER_TRIAL,),
+        )
         return float(cursor.fetchone()["total"])
 
     def is_complete(self, session_number):
@@ -360,9 +370,19 @@ class Database:
                 SELECT trial_number, target_number, direction,
                        distance_px, diameter_px, id_bits, mt_ms,
                        path_length_px, hit, error_distance_px
-                FROM {table}
-                ORDER BY id
-                """
+                FROM (
+                    SELECT trial_number, target_number, direction,
+                           distance_px, diameter_px, id_bits, mt_ms,
+                           path_length_px, hit, error_distance_px,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY trial_number ORDER BY id
+                           ) AS n
+                    FROM {table}
+                )
+                WHERE n <= ?
+                ORDER BY trial_number, n
+                """,
+                (config.TARGETS_PER_TRIAL,),
             )
             for row in cursor:
                 item = dict(row)
