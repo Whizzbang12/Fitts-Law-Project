@@ -167,7 +167,7 @@ function drawMenus() {
             : `<div class="choices">${button("participant", "Participant")}${button("test", "Test")}</div>`;
         renderMenu(`
             <h1>What kind of session is this?</h1>
-            <p class="muted">If you are a participant in this project, click Participant. Participant and Test data are stored separately.</p>
+            <p class="muted">If you are told to participate in this project, make sure to click Participant.</p>
             ${resume}
             <p id="error" class="muted">${state.error}</p>
         `);
