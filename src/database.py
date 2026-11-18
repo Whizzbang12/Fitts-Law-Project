@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS demographics (
     mouse_model TEXT,
     machine_company TEXT,
     disabilities TEXT,
+    location TEXT,
+    location_other TEXT,
+    distraction TEXT,
     skipped_questions TEXT,
     survey_back_count INTEGER
 )
@@ -100,6 +103,9 @@ class Database:
             "mouse_model",
             "machine_company",
             "skipped_questions",
+            "location",
+            "location_other",
+            "distraction",
         ):
             if column not in existing:
                 self.conn.execute(f"ALTER TABLE demographics ADD COLUMN {column} TEXT")
@@ -207,9 +213,10 @@ class Database:
             INSERT OR REPLACE INTO demographics (
                 participant, name, gender, gender_other, age,
                 handedness, computer_hours, input_device,
-                input_device_other, mouse_model, machine_company,
-                disabilities, skipped_questions, survey_back_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                input_device_other,                 mouse_model, machine_company, disabilities,
+                location, location_other, distraction,
+                skipped_questions, survey_back_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(session_number),
@@ -224,6 +231,9 @@ class Database:
                 _text_or_null(answers.get("mouse_model")),
                 _text_or_null(answers.get("machine_company")),
                 _text_or_null(answers.get("disabilities")),
+                _text_or_null(answers.get("location")),
+                _text_or_null(answers.get("location_other")),
+                _text_or_null(answers.get("distraction")),
                 _text_or_null(answers.get("skipped_questions")),
                 int(answers.get("survey_back_count") or 0),
             ),

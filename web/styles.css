@@ -117,7 +117,34 @@ input[type="text"] {
 body.task #screen { display: none; }
 body.task #task { display: block; }
 
-#error {
-    color: #ffb4b4;
-    min-height: 1.2em;
+.scale {
+    width: min(560px, 80vw);
+    margin: calc(36px * var(--ui)) auto 0;
+    touch-action: none;
+    cursor: pointer;
+}
+
+.scale-line {
+    position: relative;
+    height: calc(8px * var(--ui));
+    border-radius: 999px;
+    background: #ffffff;
+}
+
+.scale-knob {
+    position: absolute;
+    top: 50%;
+    width: calc(32px * var(--ui));
+    height: calc(32px * var(--ui));
+    border-radius: 50%;
+    background: var(--button);
+    transform: translate(-50%, -50%);
+}
+
+.scale-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: calc(28px * var(--ui));
+    color: var(--muted);
+    font-size: calc(20px * var(--ui));
 }

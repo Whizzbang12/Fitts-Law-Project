@@ -31,6 +31,8 @@ export const QUESTIONS = [
     { id: "mouse_model", prompt: "What company or model is your mouse?", kind: "text", placeholder: "Example: Logitech MX Master", digitsOnly: false, maxLen: 80, requires: ["input_device", "Mouse"] },
     { id: "machine_company", prompt: "What company made the computer you are using?", kind: "text", placeholder: "Example: Dell, Apple, Lenovo", digitsOnly: false, maxLen: 80, requires: ["input_device", "Trackpad"] },
     { id: "disabilities", prompt: "Do you have any disabilities? Feel free to provide the disability if it is not listed in the options.", kind: "multi", options: ["Hearing Impairments", "Vision Impairments", "Cognitive Difficulties", "Mobility Difficulties", "No"], otherPlaceholder: "Type a disability not listed", noneOption: "No" },
+    { id: "location", prompt: "Where are you doing this study right now?", kind: "choice", options: ["Quiet place at home", "Home, with other people or noise nearby", "School or lab", "Quiet place in a library", "Work", "A public or busy place", "Other"], otherOption: "Other", otherKey: "location_other", otherPlaceholder: "Type the place" },
+    { id: "distraction", prompt: "How distracted are you right now?", kind: "scale", minValue: 1, maxValue: 5, lowLabel: "Not distracted", highLabel: "Very distracted" },
 ];
 
 export function indexOfDifficulty(distance, diameter) {
@@ -80,6 +82,9 @@ export function blankAnswers() {
         machine_company: "",
         disabilities: [],
         disabilities_other: "",
+        location: null,
+        location_other: "",
+        distraction: null,
     };
 }
 
@@ -135,6 +140,11 @@ export function answerComplete(question, answers) {
     if (question.kind === "text") return textInRange(question, answers[question.id]);
     if (question.kind === "multi") {
         return answers.disabilities.length > 0 || Boolean((answers.disabilities_other || "").trim());
+    }
+    if (question.kind === "scale") {
+        return Number.isInteger(answers[question.id])
+            && answers[question.id] >= question.minValue
+            && answers[question.id] <= question.maxValue;
     }
     return false;
 }

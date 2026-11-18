@@ -190,7 +190,16 @@ function drawMenus() {
         const complete = study.answerComplete(question, state.answers);
         const hint = study.validationMessage(question, state.answers);
         let body = "";
-        if (question.kind === "choice" || question.kind === "multi") {
+        if (question.kind === "scale") {
+            const placed = Number.isInteger(state.answers.distraction);
+            const knob = placed
+                ? `<div class="scale-knob" style="left:${((state.answers.distraction - 1) / 4) * 100}%"></div>`
+                : "";
+            const readout = placed
+                ? `<p>${state.answers.distraction}</p>`
+                : `<p class="muted">Drag the line to choose 1 to 5</p>`;
+            body = `<div id="scale" class="scale"><div class="scale-line">${knob}</div>${readout}<div class="scale-labels"><span>1 ${question.lowLabel}</span><span>5 ${question.highLabel}</span></div></div>`;
+        } else if (question.kind === "choice" || question.kind === "multi") {
             const selected = question.kind === "multi" ? state.answers.disabilities : [state.answers[question.id]];
             body = `<div class="choices">${question.options.map((option) => button(`opt-${option}`, option, selected.includes(option) ? "choice selected" : "choice")).join("")}</div>`;
             if (question.kind === "choice" && state.answers[question.id] === question.otherOption) {
@@ -218,6 +227,37 @@ function drawMenus() {
             field.focus();
             field.setSelectionRange(field.value.length, field.value.length);
             field.addEventListener("input", () => onField(question, field.value));
+        }
+        const scale = document.querySelector("#scale");
+        if (scale) {
+            const setDistraction = (clientX, commit) => {
+                const line = scale.querySelector(".scale-line");
+                const rect = line.getBoundingClientRect();
+                const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
+                const value = 1 + Math.round(ratio * 4);
+                state.answers.distraction = value;
+                let knob = line.querySelector(".scale-knob");
+                if (!knob) {
+                    knob = document.createElement("div");
+                    knob.className = "scale-knob";
+                    line.appendChild(knob);
+                }
+                knob.style.left = `${((value - 1) / 4) * 100}%`;
+                if (commit) {
+                    persist();
+                    drawMenus();
+                }
+            };
+            scale.addEventListener("pointerdown", (event) => {
+                scale.setPointerCapture(event.pointerId);
+                setDistraction(event.clientX, false);
+            });
+            scale.addEventListener("pointermove", (event) => {
+                if (scale.hasPointerCapture(event.pointerId)) setDistraction(event.clientX, false);
+            });
+            scale.addEventListener("pointerup", (event) => {
+                if (scale.hasPointerCapture(event.pointerId)) setDistraction(event.clientX, true);
+            });
         }
         return;
     }
@@ -387,6 +427,9 @@ async function saveSurvey() {
         p_mouse_model: blank(state.answers.input_device === "Mouse" ? state.answers.mouse_model : ""),
         p_machine_company: blank(state.answers.input_device === "Trackpad" ? state.answers.machine_company : ""),
         p_disabilities: blank(study.formatDisabilities(state.answers)),
+        p_location: blank(state.answers.location),
+        p_location_other: blank(state.answers.location === "Other" ? state.answers.location_other : ""),
+        p_distraction: Number.isInteger(state.answers.distraction) ? state.answers.distraction : null,
         p_skipped: blank(skipped.join(", ")),
         p_back_count: state.backCount,
     });

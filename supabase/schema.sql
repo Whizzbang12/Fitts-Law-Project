@@ -55,6 +55,9 @@ create table if not exists demographics (
     mouse_model text,
     machine_company text,
     disabilities text,
+    location text,
+    location_other text,
+    distraction integer,
     skipped_questions text,
     survey_back_count integer
 );
@@ -177,6 +180,9 @@ create or replace function save_demographics(
     p_mouse_model text,
     p_machine_company text,
     p_disabilities text,
+    p_location text,
+    p_location_other text,
+    p_distraction integer,
     p_skipped text,
     p_back_count integer
 )
@@ -195,11 +201,13 @@ begin
     insert into demographics (
         session_number, name, gender, gender_other, age, handedness,
         computer_hours, input_device, input_device_other, mouse_model,
-        machine_company, disabilities, skipped_questions, survey_back_count
+        machine_company, disabilities, location, location_other, distraction,
+        skipped_questions, survey_back_count
     ) values (
         p_session, p_name, p_gender, p_gender_other, p_age, p_handedness,
         p_computer_hours, p_input_device, p_input_device_other, p_mouse_model,
-        p_machine_company, p_disabilities, p_skipped, p_back_count
+        p_machine_company, p_disabilities, p_location, p_location_other, p_distraction,
+        p_skipped, p_back_count
     )
     on conflict (session_number) do update set
         name = excluded.name,
@@ -213,6 +221,9 @@ begin
         mouse_model = excluded.mouse_model,
         machine_company = excluded.machine_company,
         disabilities = excluded.disabilities,
+        location = excluded.location,
+        location_other = excluded.location_other,
+        distraction = excluded.distraction,
         skipped_questions = excluded.skipped_questions,
         survey_back_count = excluded.survey_back_count;
 end;
@@ -254,13 +265,13 @@ $$;
 revoke all on function claim_session(text) from public;
 revoke all on function abandon_session(text, integer, uuid) from public;
 revoke all on function insert_trial(text, integer, uuid, integer, integer, text, double precision, double precision, double precision, double precision, double precision, integer, double precision, double precision, double precision, double precision) from public;
-revoke all on function save_demographics(integer, uuid, text, text, text, text, text, text, text, text, text, text, text, text, integer) from public;
+revoke all on function save_demographics(integer, uuid, text, text, text, text, text, text, text, text, text, text, text, text, text, integer, text, integer) from public;
 revoke all on function save_session_info(text, integer, uuid, text, text, text, text, integer, integer, double precision) from public;
 
 grant execute on function claim_session(text) to anon, authenticated;
 grant execute on function abandon_session(text, integer, uuid) to anon, authenticated;
 grant execute on function insert_trial(text, integer, uuid, integer, integer, text, double precision, double precision, double precision, double precision, double precision, integer, double precision, double precision, double precision, double precision) to anon, authenticated;
-grant execute on function save_demographics(integer, uuid, text, text, text, text, text, text, text, text, text, text, text, text, integer) to anon, authenticated;
+grant execute on function save_demographics(integer, uuid, text, text, text, text, text, text, text, text, text, text, text, text, text, integer, text, integer) to anon, authenticated;
 grant execute on function save_session_info(text, integer, uuid, text, text, text, text, integer, integer, double precision) to anon, authenticated;
 
 -- To leave someone out of Excel without deleting them or changing later numbers:

@@ -108,6 +108,32 @@ QUESTIONS = (
         "other_placeholder": "Type a disability not listed",
         "none_option": "No",
     },
+    {
+        "id": "location",
+        "prompt": "Where are you doing this study right now?",
+        "kind": "choice",
+        "options": (
+            "Quiet place at home",
+            "Home, with other people or noise nearby",
+            "School or lab",
+            "Quiet place in a library",
+            "Work",
+            "A public or busy place",
+            "Other",
+        ),
+        "other_option": "Other",
+        "other_key": "location_other",
+        "other_placeholder": "Type the place",
+    },
+    {
+        "id": "distraction",
+        "prompt": "How distracted are you right now?",
+        "kind": "scale",
+        "min_value": 1,
+        "max_value": 5,
+        "low_label": "Not distracted",
+        "high_label": "Very distracted",
+    },
 )
 
 
@@ -143,6 +169,9 @@ def blank_answers():
         "machine_company": "",
         "disabilities": set(),
         "disabilities_other": "",
+        "location": None,
+        "location_other": "",
+        "distraction": None,
     }
 
 
@@ -221,6 +250,9 @@ def answer_is_complete(question, answers):
         selected = answers.get("disabilities") or set()
         other = (answers.get("disabilities_other") or "").strip()
         return bool(selected) or bool(other)
+    if kind == "scale":
+        value = answers.get(question["id"])
+        return isinstance(value, int) and question["min_value"] <= value <= question["max_value"]
     return False
 
 

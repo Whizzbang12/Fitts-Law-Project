@@ -250,6 +250,11 @@ class FittsApp:
                 self.answers["machine_company"] if self.answers["input_device"] == "Trackpad" else ""
             ),
             "disabilities": survey.format_disabilities(self.answers),
+            "location": self.answers["location"],
+            "location_other": (
+                self.answers["location_other"] if self.answers["location"] == "Other" else ""
+            ),
+            "distraction": self.answers["distraction"],
             "skipped_questions": ", ".join(
                 question_id
                 for question_id in (q["id"] for q in survey.QUESTIONS)
@@ -378,6 +383,29 @@ class FittsApp:
         )
         self.bottom_right_button("I Consent", size=(280, 70), key="consent")
 
+    def draw_scale(self, question, y):
+        u = self.u
+        low = question["min_value"]
+        high = question["max_value"]
+        width = u(560)
+        track = pygame.Rect(0, 0, width, u(8))
+        track.center = (self.center[0], y)
+        pygame.draw.rect(self.screen, config.FIELD_BORDER, track, border_radius=u(4))
+        value = self.answers.get(question["id"])
+        if isinstance(value, int):
+            span = max(1, high - low)
+            knob_x = track.left + int((value - low) / span * track.width)
+            pygame.draw.circle(self.screen, config.BUTTON_COLOR, (knob_x, track.centery), u(16))
+            self.draw_text(str(value), y + u(48), self.font, config.TEXT_COLOR)
+        else:
+            self.draw_text("Drag the line to choose 1 to 5", y + u(48), self.small_font, config.MUTED_TEXT)
+        hit = track.inflate(0, u(36))
+        self._hit_rects["scale"] = hit
+        low_image = self.small_font.render(f"{low}  {question['low_label']}", True, config.MUTED_TEXT)
+        high_image = self.small_font.render(f"{high}  {question['high_label']}", True, config.MUTED_TEXT)
+        self.screen.blit(low_image, low_image.get_rect(midleft=(track.left, y + u(48))))
+        self.screen.blit(high_image, high_image.get_rect(midright=(track.right, y + u(48))))
+
     def draw_survey(self):
         u = self.u
         visible = self.visible_questions()
@@ -393,11 +421,15 @@ class FittsApp:
             and self.answers.get(question["id"]) == question.get("other_option")
         )
         if question["kind"] == "choice":
-            options_h = option_count * u(78)
+            step = 64 if option_count > 5 else 78
+            options_h = option_count * u(step)
             field_h = u(88) if show_gender_other else 0
         elif question["kind"] == "text":
             options_h = 0
             field_h = u(80)
+        elif question["kind"] == "scale":
+            options_h = 0
+            field_h = u(120)
         else:
             options_h = option_count * u(70)
             field_h = u(88)
@@ -417,16 +449,18 @@ class FittsApp:
         y = prompt_top + prompt_h + u(36)
 
         if question["kind"] == "choice":
+            step = 64 if option_count > 5 else 78
+            button_size = (760, 52) if option_count > 5 else (440, 60)
             for option in question["options"]:
                 selected = self.answers[question["id"]] == option
                 self.button(
                     option,
-                    (self.center[0], y + u(28)),
-                    size=(440, 60),
+                    (self.center[0], y + u(26)),
+                    size=button_size,
                     selected=selected,
                     key=f"opt:{option}",
                 )
-                y += u(78)
+                y += u(step)
             if show_gender_other:
                 other_key = question.get("other_key", "gender_other")
                 self.text_field(
@@ -464,6 +498,8 @@ class FittsApp:
                 placeholder=question.get("other_placeholder", ""),
                 key="disabilities_other",
             )
+        elif question["kind"] == "scale":
+            self.draw_scale(question, y + u(40))
 
         next_size = (220, 70)
         if survey.answer_is_complete(question, self.answers):
@@ -657,9 +693,27 @@ class FittsApp:
                         else:
                             selected.add(option)
                 return
-            if key in self.answers:
-                self.text_focus = key
+            if key in self.answers or key == "scale":
+                if key == "scale":
+                    self.scale_drag = True
+                    self.set_scale_from_point(point)
+                else:
+                    self.text_focus = key
                 return
+
+    def set_scale_from_point(self, point):
+        question = self.current_question()
+        if question["kind"] != "scale":
+            return
+        track = self._hit_rects.get("scale")
+        if track is None:
+            return
+        low = question["min_value"]
+        high = question["max_value"]
+        span = max(1, high - low)
+        ratio = (point[0] - track.left) / max(1, track.width)
+        ratio = min(1, max(0, ratio))
+        self.answers[question["id"]] = low + int(round(ratio * span))
 
     def clicked(self, key, point):
         rect = self._hit_rects.get(key)
@@ -763,6 +817,11 @@ class FittsApp:
                     self.on_key(event)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     self.on_click(event.pos)
+                elif event.type == pygame.MOUSEMOTION and event.buttons[0] and getattr(self, "scale_drag", False):
+                    if self.state == "survey" and self.current_question()["kind"] == "scale":
+                        self.set_scale_from_point(event.pos)
+                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    self.scale_drag = False
             if self.state == "move":
                 self.add_sample(pygame.mouse.get_pos())
             self.draw()
